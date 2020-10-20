@@ -1,0 +1,2 @@
+[credential]
+	helper = /bin/sh INSTALL_DIR/.git-credential-helper.sh
