@@ -1,14 +1,18 @@
-# Stage 1 - base OS and NSO
+# Alpine + GLIBC base image
+#
+# This is somewhat iffy...the NSO installer completes, but complains about missing libraries.
+# I think it's looking in the wrong place in the MUSL + GLIBC base. Regardless, NSO itself
+# seems to work...
+#
+# Note 'su' here doesn't support the whitelist-environment for OAUTH_TOKEN & GIT_USERNAME
+FROM frolvlad/alpine-glibc
 
-FROM ubuntu:20.04 as BaseNSO
-
-ARG build_date=unspecified
 ARG nso_ver=5.4.2
 ARG file_server=0.0.0.0:48888
 ARG docker_cli=true
 
 # install_dir has to be absolute (used in sed edit below)
-ARG install_dir=/nso
+ARG install_dir=/pkgs
 
 LABEL org.opencontainers.image.title="Cisco-NSO" \
       org.opencontainers.image.description="Cisco NSO testing" \
@@ -19,35 +23,19 @@ LABEL org.opencontainers.image.title="Cisco-NSO" \
 WORKDIR ${install_dir}
 EXPOSE 2022/tcp 2024/tcp 8080/tcp
 
-#Uncomment these COPY statements to have the RUN skip some wget operations
-COPY requirements.txt /tmp
-COPY ssh-config ./.ssh/config
-COPY git-credential-helper.sh ./.git-credential-helper.sh
-COPY gitconfig ./.gitconfig
-COPY nso-${nso_ver}.linux.x86_64.installer.bin /tmp
+# Note apache-ant currently appears to depend on OpenJDK 8, so this ends up with
+# two OpenJDK versions. Should it just drop back to OpenJDK 8?
 
-#SHELL ["/bin/bash", "-c"]
-
-# Install software
 RUN echo "======== Updating base OS" && \
-    apt-get -qq update && \
-    apt-get -qq upgrade && \
+    apk update && apk upgrade && \
     \
     echo "======== Installing utilities, Java, Python" && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -qq --no-install-recommends wget apt-utils openssh-client default-jdk-headless python3 tmux && \
-    if [ ! -e /usr/bin/python ]; then ln -s python3 /usr/bin/python ; fi && \
+    apk add --no-cache wget bash openssh-client openssh-keygen file && \
+    apk add --no-cache openjdk11-jre-headless python3 python3-dev && \
+    if [ ! -e /usr/bin/python ]; then ln -sf python3 /usr/bin/python ; fi && \
     \
     echo "======== Installing build tools for NSO packages" && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -qq --no-install-recommends sudo vim git make ant libxml2-utils xsltproc && \
-    #DEBIAN_FRONTEND=noninteractive apt-get install -qq --no-install-recommends pylint yapf3 && \
-    \
-    if [ "${docker_cli}" = "true" ]; then \
-      echo "======== Installing Docker CLI for Jenkins + CXTA" ; \
-      DEBIAN_FRONTEND=noninteractive apt-get install -qq --no-install-recommends curl gnupg-agent software-properties-common ; \
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sh -c 'apt-key add -' ; \
-      add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" ; \
-      DEBIAN_FRONTEND=noninteractive apt-get install -qq --no-install-recommends docker-ce-cli ; \
-    fi && \
+    apk add --no-cache sudo vim git make libxml2-dev libxslt-dev apache-ant musl-dev gcc && \
     \
     if [ ! -e /tmp/requirements.txt ]; then \
       echo "======== Fetching local files" ; \
@@ -60,35 +48,31 @@ RUN echo "======== Updating base OS" && \
     fi && \
     \
     echo "======== Installing pip and requirements" && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -qq --no-install-recommends python3-pip python3-venv && \
-    pip3 install --no-cache --upgrade pip && \
+    python3 -m ensurepip && \
+    rm -r /usr/lib/python*/ensurepip && \
+    pip3 install --no-cache --upgrade pip setuptools wheel && \
     if [ ! -e /usr/bin/pip ]; then ln -s pip3 /usr/bin/pip ; fi && \
-    python3 -m venv /venv && \
-    . /venv/bin/activate && \
-    pip3 install --no-cache setuptools wheel && \
-    pip3 install --no-cache -r /tmp/requirements.txt && \
+    pip install -r /tmp/requirements.txt && \
+    rm /tmp/requirements.txt && \
     \
     echo "======== Installing NSO ${nso_ver}" && \
     sh /tmp/nso-${nso_ver}.linux.x86_64.installer.bin ${install_dir}/nso-install --local-install && \
     # Normally these keys should be RW only for user, but may need R for group/other in Jenkins pipeline with potentially random user
     chmod 0644 ${install_dir}/nso-install/netsim/confd/etc/confd/ssh/ssh_host_rsa_key && \
     chmod 0644 ${install_dir}/nso-install/etc/ncs/ssh/ssh_host_ed25519_key && \
-    \
-    echo "======== OS cleanup" && \
-    apt-get -qq autoremove && \
-    apt-get -qq clean autoclean && \
-    rm -rf /var/lib/apt/lists/{apt,dpkg,cache,log} /tmp/* /var/tmp/* && \
+    rm /tmp/nso-${nso_ver}.linux.x86_64.installer.bin && \
     \
     echo "======== Creating local ncsadmin user" && \
-    useradd -d ${install_dir} -s /bin/bash -U -M ncsadmin && \
+    adduser -h ${install_dir} -s /bin/bash -H -D ncsadmin && \
     echo "ncsadmin ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/ncsadmin && \
     chmod 0440 /etc/sudoers.d/ncsadmin && \
     echo "PATH=/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> .profile && \
-    echo "if [ -f ~/.bashrc ]; then\n  . ~/.bashrc\nfi\n" >> .profile && \
+    printf "if [ -f ~/.bashrc ]; then\n  . ~/.bashrc\nfi\n" >> .profile && \
     echo "source ${install_dir}/nso-install/ncsrc" >> .bashrc && \
+    # echo 'export NCS_JAVA_VM_OPTIONS="-Xmx1G -Xms512M"' >> .bashrc && \
     chown -R ncsadmin:ncsadmin ${install_dir} && \
     \
     echo "======== Finishing up" && \
     sed -i'' "s/INSTALL_DIR/\\${install_dir}/" .gitconfig
 
-CMD ["su", "--whitelist-environment=OAUTH_TOKEN,GIT_USERNAME", "-", "ncsadmin"]
+CMD ["su", "-", "ncsadmin"]

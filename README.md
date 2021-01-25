@@ -2,17 +2,22 @@
 
 First you need the Linux installer for the target NSO release from [Cisco](https://software.cisco.com/download/home).
 Then you have two options for building the container, either use the ```dockerbuild.sh``` script or call
-```docker build``` directly. Using the script will result in a slightly smaller container image as it uses a local
-temporary HTTP server instead of including the NSO installer in the Docker context and doing additional COPY
-operations in the Dockerfile.
+```docker build``` directly. Using the script will result in a slightly smaller container image as it pulls
+the install files from a local temporary HTTP server instead of including those files in the Docker context
+and doing additional COPY operations in the Dockerfile.
 
-First, put the NSO installer in the ```install-files``` directory.
+First, put the non-signed NSO installer in the ```install-files``` directory. If you need to unpack it first
+from a signed installer, do:
+```commandline
+sh ./<signed installer> --skip-verification
+```
 
 If you want to use the script, run:
 ```commandline
-./dockerbuild.sh <local server IP> [--nsoVer <NSOver>] [--serverPort <FileServerPort>]
+./dockerbuild.sh <local server IP> [--nsoVer <NSOver>] [--serverPort <FileServerPort>] [--dockerfile <Dockerfile>]
 ```
-Note the optional NSO version (default 5.4.1.1) and server port (default 48888) arguments.
+Note the optional NSO version (default 5.4.2), server port (default 48888), and Dockerfile (default Dockerfile.script)
+arguments.
 
 If you don't want to use the script, use the ```install-files``` directory as the Docker build context
 and do the build from there:
