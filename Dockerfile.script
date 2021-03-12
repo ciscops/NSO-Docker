@@ -5,7 +5,7 @@ FROM ubuntu:20.04 as BaseNSO
 ARG build_date=unspecified
 ARG nso_ver=5.4.2
 ARG file_server=0.0.0.0:48888
-ARG docker_cli=true
+ARG docker_cli=false
 
 # install_dir has to be absolute (used in sed edit below)
 ARG install_dir=/nso
