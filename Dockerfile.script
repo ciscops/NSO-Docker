@@ -3,9 +3,12 @@
 FROM ubuntu:20.04 as BaseNSO
 
 ARG build_date=unspecified
-ARG nso_ver=5.4.2
+ARG nso_ver=5.4.3
 ARG file_server=0.0.0.0:48888
 ARG docker_cli=false
+# Note some NSO packages/NEDs require Java 8
+ARG java_version=11
+ARG nso_java_opts='-Xmx1G -Xms512M'
 
 # install_dir has to be absolute (used in sed edit below)
 ARG install_dir=/nso
@@ -17,7 +20,7 @@ LABEL org.opencontainers.image.title="Cisco-NSO" \
       org.opencontainers.image.url="unspecified"
 
 WORKDIR ${install_dir}
-EXPOSE 2022/tcp 2024/tcp 8080/tcp
+EXPOSE 830/tcp 2022/tcp 2024/tcp 8080/tcp
 
 #Uncomment these COPY statements to have the RUN skip some wget operations
 #COPY requirements.txt /tmp
@@ -30,11 +33,11 @@ EXPOSE 2022/tcp 2024/tcp 8080/tcp
 
 # Install software
 RUN echo "======== Updating base OS" && \
-    apt-get -qq update && \
-    apt-get -qq upgrade && \
+    DEBIAN_FRONTEND=noninteractive apt-get -qq update && \
+    DEBIAN_FRONTEND=noninteractive apt-get -qq upgrade && \
     \
     echo "======== Installing utilities, Java, Python" && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -qq --no-install-recommends wget apt-utils openssh-client default-jdk-headless python3 tmux && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -qq --no-install-recommends wget apt-utils openssh-client openjdk-${java_version}-jre-headless python3 tmux && \
     if [ ! -e /usr/bin/python ]; then ln -s python3 /usr/bin/python ; fi && \
     \
     echo "======== Installing build tools for NSO packages" && \
@@ -73,11 +76,12 @@ RUN echo "======== Updating base OS" && \
     # Normally these keys should be RW only for user, but may need R for group/other in Jenkins pipeline with potentially random user
     chmod 0644 ${install_dir}/nso-install/netsim/confd/etc/confd/ssh/ssh_host_rsa_key && \
     chmod 0644 ${install_dir}/nso-install/etc/ncs/ssh/ssh_host_ed25519_key && \
+    rm -rf ${install_dir}/nso-install/{doc,man} && \
     \
     echo "======== OS cleanup" && \
     apt-get -qq autoremove && \
     apt-get -qq clean autoclean && \
-    rm -rf /var/lib/apt/lists/{apt,dpkg,cache,log} /tmp/* /var/tmp/* && \
+    rm -rf /var/lib/apt/lists/{apt,cache,dpkg,log} /tmp/* /var/tmp/* && \
     \
     echo "======== Creating local ncsadmin user" && \
     useradd -d ${install_dir} -s /bin/bash -U -M ncsadmin && \
@@ -86,10 +90,11 @@ RUN echo "======== Updating base OS" && \
     echo "PATH=/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> .profile && \
     printf "if [ -f ~/.bashrc ]; then\n  . ~/.bashrc\nfi\n" >> .profile && \
     echo "source ${install_dir}/nso-install/ncsrc" >> .bashrc && \
-    echo 'export NCS_JAVA_VM_OPTIONS="-Xmx1G -Xms512M"' >> .bashrc && \
+    echo "export NCS_JAVA_VM_OPTIONS=\"${nso_java_opts}\"" >> .bashrc && \
     chown -R ncsadmin:ncsadmin ${install_dir} && \
     \
     echo "======== Finishing up" && \
     sed -i'' "s/INSTALL_DIR/\\${install_dir}/" .gitconfig
 
 CMD ["su", "--whitelist-environment=OAUTH_TOKEN,GIT_USERNAME", "-", "ncsadmin"]
+
