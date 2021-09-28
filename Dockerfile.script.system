@@ -85,8 +85,8 @@ RUN printf "\n======== Updating base OS\n" && \
       wget -q --no-proxy http://${file_server}/nso-${nso_ver}.linux.x86_64.installer.bin -O /tmp/nso-${nso_ver}.linux.x86_64.installer.bin ; \
       wget -q --no-proxy http://${file_server}/runsv-ncs.sh -O /tmp/runsv-ncs.sh ; \
       wget -q --no-proxy http://${file_server}/runsv-ncs-stop.sh -O /tmp/runsv-ncs-stop.sh ; \
-      #wget -q --no-proxy http://${file_server}/vimrc -O ./.vimrc ; \
-      #wget -q --no-proxy http://${file_server}/vim-syntax-yang.tar.gz -O /tmp/vim-syntax-yang.tar.gz ; \
+      wget -q --no-proxy http://${file_server}/vimrc -O ./.vimrc ; \
+      wget -q --no-proxy http://${file_server}/vim-syntax-yang.tar.gz -O /tmp/vim-syntax-yang.tar.gz ; \
     fi && \
     if [ -f /tmp/vim-syntax-yang.tar.gz ]; then \
       tar xzf /tmp/vim-syntax-yang.tar.gz ; \
@@ -138,7 +138,7 @@ RUN printf "\n======== Updating base OS\n" && \
       # Set up for runsv
       mkdir -p /etc/service/ncs/control ; \
       # Another fragile assumption if the init script changes
-      head -37 /etc/init.d/ncs | tee /etc/service/ncs/run > /etc/service/ncs/control/t ; \
+      sed "/^case/Q" /etc/init.d/ncs | tee /etc/service/ncs/run > /etc/service/ncs/control/t ; \
       cat /tmp/runsv-ncs.sh >> /etc/service/ncs/run ; \
       cat /tmp/runsv-ncs-stop.sh >> /etc/service/ncs/control/t ; \
       chmod 755 /etc/service/ncs/run /etc/service/ncs/control/t ; \
