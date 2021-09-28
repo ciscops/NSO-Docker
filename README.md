@@ -68,11 +68,11 @@ docker run -d --rm -P --name nso-system-test <image>
 ```
 NSO should start automatically when the container is launched. Then exec in as before:
 ```commandline
-docker exec -it -u ncsadmin nso-test /bin/bash
+docker exec -it -u ncsadmin nso-system-test /bin/bash
 ```
 When stopping/shutting down the container, make sure you give NSO time to exit cleanly and close its database,
 especially if you plan on restarting the container (or another instance) with the same data. The default Docker
 stop timeout  should be fine:
 ```commandline
-docker container stop nso-test
+docker container stop nso-system-test
 ```
