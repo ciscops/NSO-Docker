@@ -1,5 +1,6 @@
-# Building a Network Services Orchestrator (NSO) container
+# Network Services Orchestrator (NSO) container
 
+## Building
 First you need the Linux installer for the target NSO release from [Cisco](https://software.cisco.com/download/home).
 Then you have two options for building the container, either use the ```dockerbuild.sh``` script or call
 ```docker build``` directly. Using the script will result in a slightly smaller container image as it pulls
@@ -16,39 +17,62 @@ If you want to use the script, run:
 ```commandline
 ./dockerbuild.sh <local server IP> [--nsoVer <NSOver>] [--serverPort <FileServerPort>] [--dockerfile <Dockerfile>]
 ```
-Note the optional NSO version (default 5.4.2), server port (default 48888), and Dockerfile (default Dockerfile.script)
-arguments.
+Note the optional NSO version (default 5.4.4.3), server port (default 48888), and Dockerfile (default Dockerfile.script)
+arguments. There are some additional optional arguments if you look at the script.
 
 If you don't want to use the script, use the ```install-files``` directory as the Docker build context
 and do the build from there:
 ```commandline
 cd ./install-files
-docker build --build-arg build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ') --build-arg nso_ver=<NSOver> -t nso-test .
+NSOver=<NSOver> docker build --build-arg build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ') --build-arg nso_ver=$NSOver -t $USER/nso:$NSOver .
 ```
+You can override any of the other ```ARG``` defaults in the Dockerfile with additional ```--build-arg```.
 
-Note the container is set up to accept a git username and token for authentication if needed
-(to access private package repos for example). Just pass ```GIT_USERNAME``` and ```OAUTH_TOKEN```
-environment variables when launching.
-
-For example, to run it interactively with a username+token:
+## Running the container
+It's strongly recommended you launch the container non-interactively so logging and child process exits are
+handled properly. For example (with randomly-assigned ports):
 ```commandline
-docker run -it --rm -e GIT_USERNAME=<username> -e OAUTH_TOKEN=<token> nso-test
+docker run -d --rm -P --name nso-test <image>
 ```
 
-Once launched, you can proceed with the initial NSO setup. Note ```ncs-run``` is a common naming convention
-for where NSO will store its operational data (you could call it whatever you want):
+Once launched, you can ```exec``` into the running container as the "ncsadmin" user:
 ```commandline
-ncs-setup --dest ncs-run
+docker exec -it -u ncsadmin nso-test /bin/bash
 ```
 
-Or you could clone a git-based project into the container and update it to run a series of tests.
-For example:
+To stop/shutdown the container:
 ```commandline
-git clone https://$OAUTH_TOKEN:x-oauth-basic@https://github.com/ciscops/NSO-sample-project ncs-run
+docker container stop nso-test
 ```
 
-You may need to pull any submodules if the local project packages are set up that way:
+## NSO setup
+Once you're in the running container, you can proceed with the initial NSO setup for an NSO local install. Note
+```ncs-run``` is a common naming convention for the directory where a local install of NSO will store its operational
+data, but you could call it whatever you want:
 ```commandline
-git clone --recurse-submodules https://$OAUTH_TOKEN:x-oauth-basic@https://github.com/ciscops/NSO-sample-project ncs-run
+ncs-setup --dest ./ncs-run
+cd ./ncs-run
+ncs
+ncs_cli -Cu admin
 ```
 
+## Build and run for an NSO system install
+This is still a bit experimental. The alternate ```Dockerfile.script.system``` can support both local and system
+installs. For system:
+```commandline
+./dockerbuild.sh <local server IP> [--nsoVer <NSOver>] --dockerfile Dockerfile.script.system --nsoInstallType system
+```
+To run the container:
+```commandline
+docker run -d --rm -P --name nso-system-test <image>
+```
+NSO should start automatically when the container is launched. Then exec in as before:
+```commandline
+docker exec -it -u ncsadmin nso-test /bin/bash
+```
+When stopping/shutting down the container, make sure you give NSO time to exit cleanly and close its database,
+especially if you plan on restarting the container (or another instance) with the same data. The default Docker
+stop timeout  should be fine:
+```commandline
+docker container stop nso-test
+```
